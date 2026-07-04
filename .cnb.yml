@@ -5,12 +5,10 @@ include:
   - https://cnb.cool/sc.hwd/cnb-sync/-/blob/main/.cnb/workflows/sync.yml
 
 $:
-  imports:
-    - "https://cnb.cool/sc.hwd/secrets/-/blob/main/git/github.yml"
-
-$:
   web_trigger_cnb_to_github:
-    - stages:
+    - imports:
+        - "https://cnb.cool/sc.hwd/secrets/-/blob/main/git/github.yml"
+      stages:
         - name: 同步到 GitHub
           script: |
             set -euo pipefail
@@ -51,7 +49,9 @@ $:
             echo "✅ 同步完成!"
 
   web_trigger_github_to_cnb:
-    - stages:
+    - imports:
+        - "https://cnb.cool/sc.hwd/secrets/-/blob/main/git/github.yml"
+      stages:
         - name: 从 GitHub 拉取
           script: |
             set -euo pipefail
@@ -84,7 +84,9 @@ $:
             echo "✅ 拉取完成!"
 
   web_trigger_full_sync:
-    - stages:
+    - imports:
+        - "https://cnb.cool/sc.hwd/secrets/-/blob/main/git/github.yml"
+      stages:
         - name: 双向同步
           script: |
             set -euo pipefail
