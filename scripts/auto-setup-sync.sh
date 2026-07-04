@@ -10,8 +10,9 @@
 #   2. 在目标仓库创建分支
 #   3. 智能合并 .cnb/web_trigger.yml（追加按钮，保留已有）
 #   4. 智能合并 .cnb.yml（追加 include 引用）
-#   5. 提交并推送目标仓库
-#   6. 在目标仓库创建 MR
+#   5. 复制 scripts/cnb-sync.sh 同步脚本
+#   6. 提交并推送目标仓库
+#   7. 在目标仓库创建 MR
 # ============================================================
 
 set -euo pipefail
@@ -342,22 +343,36 @@ PYEOF
 fi
 
 # ============================================================
-# 5. 提交并推送到目标仓库
+# 5. 复制同步脚本到目标仓库
+# ============================================================
+echo "📝 复制 cnb-sync.sh 脚本到目标仓库 ..."
+
+SCRIPTS_DIR="${TARGET_DIR}/scripts"
+mkdir -p "$SCRIPTS_DIR"
+
+# 复制 cnb-sync.sh 脚本
+cp /workspace/scripts/cnb-sync.sh "$SCRIPTS_DIR/cnb-sync.sh"
+chmod +x "$SCRIPTS_DIR/cnb-sync.sh"
+echo "  ✅ 已复制 cnb-sync.sh"
+
+# ============================================================
+# 6. 提交并推送到目标仓库
 # ============================================================
 COMMIT_MSG="feat: 一键配置 cnb↔GitHub 同步
 
 - 智能合并 .cnb/web_trigger.yml（保留已有按钮，追加同步按钮）
 - 智能合并 .cnb.yml（追加 include 引用 cnb-sync 流水线）
+- 复制 scripts/cnb-sync.sh 同步脚本
 - 目标 GitHub 仓库: ${GITHUB_REPO:-默认}"
 
-git add .cnb/web_trigger.yml .cnb.yml
+git add .cnb/web_trigger.yml .cnb.yml scripts/cnb-sync.sh
 git commit -m "$COMMIT_MSG"
 
 echo "📤 推送到目标仓库 ..."
 git push origin "$SETUP_BRANCH"
 
 # ============================================================
-# 6. 在目标仓库创建 MR
+# 7. 在目标仓库创建 MR
 # ============================================================
 echo "🔗 在 ${TARGET_SLUG} 创建 MR ..."
 
