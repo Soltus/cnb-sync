@@ -37,7 +37,8 @@ git checkout -b "$SETUP_BRANCH"
 # 1. 生成 .cnb/web_trigger.yml
 echo "📄 生成 .cnb/web_trigger.yml ..."
 mkdir -p .cnb
-cat > .cnb/web_trigger.yml << 'EOF'
+
+cat > .cnb/web_trigger.yml << 'WTEOF'
 # .cnb/web_trigger.yml
 # 自动生成的同步按钮配置
 # 来源: ⚙️ 一键配置同步
@@ -134,27 +135,22 @@ branch:
                 value: "false"
               - name: 预览模式
                 value: "true"
-EOF
+WTEOF
 
 # 2. 生成 .cnb.yml 的 include 部分
 echo "📄 更新 .cnb.yml ..."
 
 if [ ! -f .cnb.yml ]; then
-  # 没有 .cnb.yml，创建一个新的
-  cat > .cnb.yml << 'YML_EOF'
-# 流水线配置
-
+  cat > .cnb.yml << 'YMLEOF'
 include:
   - https://cnb.cool/sc.hwd/cnb-sync/-/blob/main/.cnb/workflows/sync.yml
-YML_EOF
+YMLEOF
 else
-  # 已有 .cnb.yml，检查是否已有 include
   if ! grep -q "^include:" .cnb.yml; then
     echo "" >> .cnb.yml
     echo "include:" >> .cnb.yml
     echo "  - https://cnb.cool/sc.hwd/cnb-sync/-/blob/main/.cnb/workflows/sync.yml" >> .cnb.yml
   else
-    # include 已存在，追加
     echo "  - https://cnb.cool/sc.hwd/cnb-sync/-/blob/main/.cnb/workflows/sync.yml" >> .cnb.yml
   fi
 fi
@@ -175,7 +171,27 @@ git push origin "$SETUP_BRANCH"
 
 # 5. 创建 MR
 echo "🔗 创建 MR ..."
+MR_URL="https://api.cnb.cool/${ORG}/${MY_REPO}/-/merge-requests"
+
 MR_RESPONSE=$(curl -s -X POST \
   -H "Authorization: $CNB_TOKEN" \
   -H "Content-Type: application/json" \
-  -H "Accept: application/...[truncated]
+  -H "Accept: application/vnd.cnb.api+json" \
+  -d "{
+    \"source_branch\": \"${SETUP_BRANCH}\",
+    \"target_branch\": \"main\",
+    \"title\": \"feat: 一键配置同步 (${TARGET_REPO})\",
+    \"description\": \"一键配置 cnb↔GitHub 同步（${TARGET_REPO}）\\n\\n- 添加 .cnb/web_trigger.yml（3个同步按钮）\\n- 添加 include 引用 cnb-sync 流水线\\n- 目标 GitHub 仓库: ${GITHUB_REPO:-默认}\"
+  }" 2>&1)
+
+echo "$MR_RESPONSE"
+
+if echo "$MR_RESPONSE" | grep -q '"iid"'; then
+  MR_IID=$(echo "$MR_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['iid'])" 2>/dev/null || echo "?")
+  echo ""
+  echo "✅ MR 创建成功!"
+  echo "   https://cnb.cool/${ORG}/${MY_REPO}/-/merge-requests/${MR_IID}"
+else
+  echo "❌ MR 创建失败: $MR_RESPONSE"
+  exit 1
+fi
