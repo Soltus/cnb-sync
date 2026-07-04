@@ -6,10 +6,12 @@
 #   ./auto-setup-sync.sh <target_repo> [github_repo]
 #
 # 功能:
-#   1. 创建新分支
-#   2. 智能合并 .cnb/web_trigger.yml（追加按钮，保留已有）
-#   3. 在 .cnb.yml 中追加 include 引用
-#   4. 提交并推送，创建 MR
+#   1. clone 目标仓库
+#   2. 在目标仓库创建分支
+#   3. 智能合并 .cnb/web_trigger.yml（追加按钮，保留已有）
+#   4. 智能合并 .cnb.yml（追加 include 引用）
+#   5. 提交并推送目标仓库
+#   6. 在目标仓库创建 MR
 # ============================================================
 
 set -euo pipefail
@@ -27,119 +29,39 @@ cd /workspace
 ORG="$(echo "$CNB_REPO_SLUG" | cut -d/ -f1)"
 MY_REPO="$(echo "$CNB_REPO_SLUG" | cut -d/ -f2)"
 
+# 目标仓库完整 slug
+TARGET_SLUG="${ORG}/${TARGET_REPO}"
+
 # 生成唯一分支名
 TIMESTAMP="$(date +%Y%m%d%H%M%S)"
-SETUP_BRANCH="auto-setup-sync-${TARGET_REPO}-${TIMESTAMP}"
+SETUP_BRANCH="auto-setup-sync-${TIMESTAMP}"
 
+# 目标仓库本地路径
+TARGET_DIR="/tmp/cnb-sync-target-${TARGET_REPO}-${TIMESTAMP}"
+
+echo "📝 准备目标仓库: ${TARGET_SLUG}"
+echo "   分支: ${SETUP_BRANCH}"
+
+# 1. Clone 目标仓库
+echo "📥 Clone 目标仓库 ..."
+rm -rf "$TARGET_DIR"
+git clone "https://cnb:${CNB_TOKEN}@cnb.cool/${TARGET_SLUG}.git" "$TARGET_DIR"
+cd "$TARGET_DIR"
+
+# 2. 创建新分支
 echo "📝 创建分支: $SETUP_BRANCH"
 git checkout -b "$SETUP_BRANCH"
 
 # ============================================================
-# 1. 生成 .cnb/web_trigger.yml — 智能合并
-#    保留已有按钮，追加我们的 3 个同步按钮
+# 3. 智能合并 .cnb/web_trigger.yml
 # ============================================================
 echo "📄 处理 .cnb/web_trigger.yml ..."
 mkdir -p .cnb
 
-# 我们的按钮 YAML 片段（不含外层结构）
-OUR_BUTTONS='      # 同步按钮1: 推送 cnb → GitHub
-      - name: 🚀 同步到GitHub
-        description: 将当前分支推送到 GitHub 仓库
-        event: web_trigger_cnb_to_github
-        inputs:
-          mode:
-            type: select
-            required: true
-            default: "current"
-            name: 同步范围
-            options:
-              - name: 当前分支
-                value: "current"
-              - name: 全部分支
-                value: "all"
-          branch:
-            type: input
-            required: false
-            name: 分支名
-          force:
-            type: switch
-            required: false
-            default: "false"
-            name: 强制覆盖
-          github_repo:
-            type: input
-            required: false
-            name: GitHub 仓库
-            description: 目标 GitHub 仓库地址（如 owner/repo，留空则使用默认）
-      
-      # 同步按钮2: 拉取 GitHub → cnb
-      - name: 📥 从GitHub拉取
-        description: 从 GitHub 仓库拉取最新代码
-        event: web_trigger_github_to_cnb
-        inputs:
-          mode:
-            type: select
-            required: true
-            default: "current"
-            name: 同步范围
-            options:
-              - name: 当前分支
-                value: "current"
-              - name: 全部分支
-                value: "all"
-          branch:
-            type: input
-            required: false
-            name: 分支名
-          github_repo:
-            type: input
-            required: false
-            name: GitHub 仓库
-            description: 源 GitHub 仓库地址
-      
-      # 同步按钮3: 双向同步
-      - name: 🔄 双向同步
-        description: 先推送再拉取，保持两边一致
-        event: web_trigger_full_sync
-        inputs:
-          mode:
-            type: select
-            required: true
-            default: "current"
-            name: 同步范围
-            options:
-              - name: 当前分支
-                value: "current"
-              - name: 全部分支
-                value: "all"
-          branch:
-            type: input
-            required: false
-            name: 分支名
-          force:
-            type: switch
-            required: false
-            default: "false"
-            name: 强制覆盖
-          github_repo:
-            type: input
-            required: false
-            name: GitHub 仓库
-          dry_run:
-            type: select
-            required: false
-            default: "false"
-            name: 预览模式
-            options:
-              - name: 直接执行
-                value: "false"
-              - name: 预览模式
-                value: "true"'
-
-# 检测是否已经包含我们的按钮（通过事件名判断）
+# 检测是否已经包含我们的按钮
 HAS_OUR_BUTTONS=false
 if [ -f .cnb/web_trigger.yml ]; then
-  if grep -q "web_trigger_cnb_to_github" .cnb/web_trigger.yml; then
+  if grep -q "web_trigger_cnb_to_github" .cnb/web_trigger.yml 2>/dev/null; then
     HAS_OUR_BUTTONS=true
     echo "  ⚠️ 已包含我们的同步按钮，跳过追加"
   fi
@@ -147,12 +69,10 @@ fi
 
 if [ "$HAS_OUR_BUTTONS" = false ]; then
   if [ -f .cnb/web_trigger.yml ]; then
-    # 已有文件：在 buttons: 数组内追加我们的按钮
-    # 找到第一个 button（- name:）的位置，在其前面插入
+    # 已有文件：用 python3 做真正的 YAML 合并
     echo "  检测到已有按钮，将追加我们的同步按钮..."
     
-    # 使用 python3 做安全的 YAML 合并
-    python3 << PYEOF
+    python3 << 'PYEOF'
 import yaml, sys
 
 with open(".cnb/web_trigger.yml", "r") as f:
@@ -244,7 +164,6 @@ our_buttons = [
 
 for branch_cfg in doc.get("branch", []):
     buttons = branch_cfg.get("buttons", [])
-    # 检查是否已有我们的按钮
     existing_names = {b.get("event") for b in buttons if isinstance(b, dict)}
     for btn in our_buttons:
         evt = btn.get("event")
@@ -260,6 +179,7 @@ PYEOF
   else
     # 没有文件，创建全新文件
     echo "  创建新的 web_trigger.yml ..."
+    
     python3 << 'PYEOF'
 import yaml
 
@@ -362,7 +282,7 @@ else
 fi
 
 # ============================================================
-# 2. 处理 .cnb.yml — 合并 include 部分
+# 4. 处理 .cnb.yml — 合并 include 部分
 # ============================================================
 echo "📄 处理 .cnb.yml ..."
 
@@ -391,23 +311,24 @@ else
 fi
 
 # ============================================================
-# 3. 提交
+# 5. 提交并推送到目标仓库
 # ============================================================
-COMMIT_MSG="feat: 一键配置 cnb↔GitHub 同步 (${TARGET_REPO})
+COMMIT_MSG="feat: 一键配置 cnb↔GitHub 同步
 
 - 智能合并 .cnb/web_trigger.yml（保留已有按钮，追加同步按钮）
-- 智能合并 .cnb.yml（追加 include 引用）
+- 智能合并 .cnb.yml（追加 include 引用 cnb-sync 流水线）
 - 目标 GitHub 仓库: ${GITHUB_REPO:-默认}"
 
 git add .cnb/web_trigger.yml .cnb.yml
 git commit -m "$COMMIT_MSG"
 
-# 4. 推送
-echo "📤 推送分支 ..."
+echo "📤 推送到目标仓库 ..."
 git push origin "$SETUP_BRANCH"
 
-# 5. 创建 MR
-echo "🔗 创建 MR ..."
+# ============================================================
+# 6. 在目标仓库创建 MR
+# ============================================================
+echo "🔗 在 ${TARGET_SLUG} 创建 MR ..."
 
 MR_RESPONSE=$(curl -s -X POST \
   -H "Authorization: $CNB_TOKEN" \
@@ -416,9 +337,9 @@ MR_RESPONSE=$(curl -s -X POST \
   -d "{
     \"source_branch\": \"${SETUP_BRANCH}\",
     \"target_branch\": \"main\",
-    \"title\": \"feat: 一键配置同步 (${TARGET_REPO})\",
-    \"description\": \"一键配置 cnb↔GitHub 同步（${TARGET_REPO}）\\n\\n- 智能合并 .cnb/web_trigger.yml（保留已有按钮，追加同步按钮）\\n- 智能合并 .cnb.yml（追加 include 引用）\\n- 目标 GitHub 仓库: ${GITHUB_REPO:-默认}\"
-  }" 2>&1)
+    \"title\": \"feat: 一键配置同步\",
+    \"description\": \"一键配置 cnb↔GitHub 同步\\n\\n- 智能合并 .cnb/web_trigger.yml（保留已有按钮，追加同步按钮）\\n- 智能合并 .cnb.yml（追加 include 引用）\\n- 目标 GitHub 仓库: ${GITHUB_REPO:-默认}\"
+  }" "https://api.cnb.cool/${TARGET_SLUG}/-/merge-requests" 2>&1)
 
 echo "$MR_RESPONSE"
 
@@ -426,7 +347,7 @@ if echo "$MR_RESPONSE" | grep -q '"iid"'; then
   MR_IID=$(echo "$MR_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['iid'])" 2>/dev/null || echo "?")
   echo ""
   echo "✅ MR 创建成功!"
-  echo "   https://cnb.cool/${ORG}/${MY_REPO}/-/merge-requests/${MR_IID}"
+  echo "   https://cnb.cool/${TARGET_SLUG}/-/merge-requests/${MR_IID}"
 else
   echo "❌ MR 创建失败: $MR_RESPONSE"
   exit 1
