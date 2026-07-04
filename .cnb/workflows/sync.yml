@@ -1,8 +1,23 @@
 # .cnb/workflows/sync.yml
 # 通用 cnb ↔ GitHub 同步流水线
+#
+# 使用说明:
+#   1. 通过 include 引用到你的 .cnb.yml 中
+#   2. 在 secrets 仓库中配置 GITHUB_TOKEN 并通过 allow_slugs 授权
+#   3. 确保仓库中有 scripts/cnb-sync.sh
+#
+# 触发事件:
+#   web_trigger_cnb_to_github  — 推送 cnb → GitHub（由按钮 "🚀 同步到GitHub" 触发）
+#   web_trigger_github_to_cnb  — 拉取 GitHub → cnb（由按钮 "📥 从GitHub拉取" 触发）
+#   web_trigger_full_sync      — 双向同步（由按钮 "🔄 双向同步" 触发）
+#
+# 注意: imports 必须放在每个事件的 - 项下（与 stages 同级），
+#       否则 secrets 仓库的 GITHUB_TOKEN 不会被注入
 
 $:
+  # ========== 按钮1: 推送 cnb → GitHub ==========
   web_trigger_cnb_to_github:
+    # 从 secrets 仓库导入 GITHUB_TOKEN
     - imports:
         - "https://cnb.cool/sc.hwd/secrets/-/blob/main/git/github.yml"
       stages:
@@ -45,7 +60,9 @@ $:
             
             echo "✅ 同步完成!"
 
+  # ========== 按钮2: 拉取 GitHub → cnb ==========
   web_trigger_github_to_cnb:
+    # 从 secrets 仓库导入 GITHUB_TOKEN
     - imports:
         - "https://cnb.cool/sc.hwd/secrets/-/blob/main/git/github.yml"
       stages:
@@ -80,7 +97,9 @@ $:
             
             echo "✅ 拉取完成!"
 
+  # ========== 按钮3: 双向同步 ==========
   web_trigger_full_sync:
+    # 从 secrets 仓库导入 GITHUB_TOKEN
     - imports:
         - "https://cnb.cool/sc.hwd/secrets/-/blob/main/git/github.yml"
       stages:
