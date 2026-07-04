@@ -331,9 +331,9 @@ git push origin "$SETUP_BRANCH"
 echo "🔗 在 ${TARGET_SLUG} 创建 MR ..."
 
 MR_RESPONSE=$(curl -s -X POST \
-  -H "Authorization: $CNB_TOKEN" \
+  -H "Authorization: Bearer $CNB_TOKEN" \
   -H "Content-Type: application/json" \
-  -H "Accept: application/vnd.cnb.api+json" \
+  -H "Accept: application/json" \
   -d "{
     \"source_branch\": \"${SETUP_BRANCH}\",
     \"target_branch\": \"main\",
