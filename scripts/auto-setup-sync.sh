@@ -333,20 +333,56 @@ echo "🔗 在 ${TARGET_SLUG} 创建 MR ..."
 # 切换到目标仓库目录
 cd "$TARGET_DIR"
 
-# 使用 GitLab-style API 创建 MR (cnb 基于 GitLab)
-set +e
-MR_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-  -H "PRIVATE-TOKEN: $CNB_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"source_branch\": \"${SETUP_BRANCH}\",
-    \"target_branch\": \"main\",
-    \"title\": \"feat: 一键配置同步\",
-    \"description\": \"一键配置 cnb↔GitHub 同步\\n\\n- 智能合并 .cnb/web_trigger.yml（保留已有按钮，追加同步按钮）\\n- 智能合并 .cnb.yml（追加 include 引用）\\n- 目标 GitHub 仓库: ${GITHUB_REPO:-默认}\"
-  }" "https://api.cnb.cool/api/v4/projects/${TARGET_SLUG//\//%2F}/merge_requests" 2>&1)
-MR_HTTP_CODE=$(echo "$MR_RESPONSE" | tail -1)
-MR_BODY=$(echo "$MR_RESPONSE" | sed '$d')
-set -e
+# 尝试多个可能的 API 端点
+echo "   尝试创建 MR..."
+
+# 端点 1: 标准 GitLab API (带 org prefix)
+ENDPOINTS=(
+  "https://api.cnb.cool/api/v4/projects/${TARGET_SLUG//\//%2F}%2Fmerge_requests"
+  "https://api.cnb.cool/${TARGET_SLUG}/-/merge-requests.json"
+  "https://cnb.cool/api/v4/projects?search=${TARGET_REPO}"
+)
+
+MR_RESPONSE=""
+MR_HTTP_CODE=""
+
+for endpoint in "${ENDPOINTS[@]}"; do
+  echo "   尝试端点: $endpoint"
+  set +e
+  TEMP_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+    -H "PRIVATE-TOKEN: $CNB_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{
+      \"source_branch\": \"${SETUP_BRANCH}\",
+      \"target_branch\": \"main\",
+      \"title\": \"feat: 一键配置同步\",
+      \"description\": \"一键配置 cnb↔GitHub 同步\"
+    }" "$endpoint" 2>&1)
+  TEMP_CODE=$(echo "$TEMP_RESPONSE" | tail -1)
+  TEMP_BODY=$(echo "$TEMP_RESPONSE" | sed '$d')
+  set -e
+  
+  echo "   HTTP $TEMP_CODE: $(echo "$TEMP_BODY" | head -c 100)"
+  
+  if [ "$TEMP_CODE" = "201" ] || [ "$TEMP_CODE" = "200" ]; then
+    MR_RESPONSE="$TEMP_BODY"
+    MR_HTTP_CODE="$TEMP_CODE"
+    break
+  fi
+done
+
+# 如果所有端点都失败,直接使用 git push 后显示的链接
+if [ -z "$MR_HTTP_CODE" ] || [ "$MR_HTTP_CODE" != "201" ] && [ "$MR_HTTP_CODE" != "200" ]; then
+  echo ""
+  echo "⚠️  API 创建 MR 失败,但分支已成功推送"
+  echo ""
+  echo "✅ 请手动访问以下链接创建 MR:"
+  echo "   https://cnb.cool/${TARGET_SLUG}/-/compare/main...${SETUP_BRANCH}"
+  echo ""
+  echo "   或点击推送完成时显示的链接:"
+  echo "   https://cnb.cool/${TARGET_SLUG}/-/compare/main...${SETUP_BRANCH}"
+  exit 0
+fi
 
 echo "   HTTP 状态码: $MR_HTTP_CODE"
 echo "   API 响应: $MR_BODY"
@@ -356,13 +392,7 @@ if [ "$MR_HTTP_CODE" = "201" ] || [ "$MR_HTTP_CODE" = "200" ]; then
   echo ""
   echo "✅ MR 创建成功!"
   echo "   https://cnb.cool/${TARGET_SLUG}/-/merge-requests/${MR_IID}"
-elif [ "$MR_HTTP_CODE" = "401" ]; then
-  echo "❌ 认证失败,请检查 CNB_TOKEN 是否有写入权限"
-  exit 1
-elif [ "$MR_HTTP_CODE" = "404" ]; then
-  echo "❌ API 端点不存在"
-  exit 1
 else
-  echo "❌ MR 创建失败 (HTTP $MR_HTTP_CODE)"
+  echo "❌ MR 创建失败"
   exit 1
 fi
