@@ -330,7 +330,11 @@ git push origin "$SETUP_BRANCH"
 # ============================================================
 echo "🔗 在 ${TARGET_SLUG} 创建 MR ..."
 
+# 切换到目标仓库目录
+cd "$TARGET_DIR"
+
 # 使用 cnb CLI 创建 MR
+set +e
 MR_RESPONSE=$(cnb pulls post-pull \
   --repo "${TARGET_SLUG}" \
   --title "feat: 一键配置同步" \
@@ -342,15 +346,18 @@ MR_RESPONSE=$(cnb pulls post-pull \
   --head "${SETUP_BRANCH}" \
   --base "main" \
   --verbose 2>&1)
+MR_EXIT_CODE=$?
+set -e
 
+echo "   MR 退出码: $MR_EXIT_CODE"
 echo "   MR 响应: $MR_RESPONSE"
 
-if echo "$MR_RESPONSE" | grep -q '"iid"' || echo "$MR_RESPONSE" | grep -qi "merge request"; then
+if [ $MR_EXIT_CODE -eq 0 ]; then
   MR_IID=$(echo "$MR_RESPONSE" | python3 -c "import sys,json; data=json.load(sys.stdin); print(data.get('iid', data.get('number', '?')))" 2>/dev/null || echo "?")
   echo ""
   echo "✅ MR 创建成功!"
   echo "   https://cnb.cool/${TARGET_SLUG}/-/merge-requests/${MR_IID}"
 else
-  echo "❌ MR 创建失败: $MR_RESPONSE"
+  echo "❌ MR 创建失败 (退出码: $MR_EXIT_CODE)"
   exit 1
 fi
