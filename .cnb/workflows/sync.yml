@@ -142,7 +142,7 @@ $:
         - "https://cnb.cool/sc.hwd/secrets/-/blob/main/git/github.yml"
         - "https://cnb.cool/sc.hwd/secrets/-/blob/main/git/cnb.yml"
       docker:
-        image: python3.11
+        image: docker.cnb.cool/examples/language/python-3:latest
       stages:
         - name: 一键配置同步
           script: |
