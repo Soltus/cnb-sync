@@ -180,7 +180,7 @@ PYEOF
     # 没有文件，创建全新文件
     echo "  创建新的 web_trigger.yml ..."
     
-    python3 << 'PYEOF'
+    python << 'PYEOF'
 import yaml
 
 doc = {
@@ -344,7 +344,7 @@ MR_RESPONSE=$(curl -s -X POST \
 echo "$MR_RESPONSE"
 
 if echo "$MR_RESPONSE" | grep -q '"iid"'; then
-  MR_IID=$(echo "$MR_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['iid'])" 2>/dev/null || echo "?")
+  MR_IID=$(echo "$MR_RESPONSE" | python -c "import sys,json; print(json.load(sys.stdin)['iid'])" 2>/dev/null || echo "?")
   echo ""
   echo "✅ MR 创建成功!"
   echo "   https://cnb.cool/${TARGET_SLUG}/-/merge-requests/${MR_IID}"
