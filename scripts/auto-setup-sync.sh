@@ -1,17 +1,49 @@
-# .cnb/web_trigger.yml
-# 通用 cnb ↔ GitHub 同步按钮配置
-# ⚠️ 此文件必须存在于仓库本地，不支持 include/imports
+#!/bin/bash
+# ============================================================
+# auto-setup-sync.sh — 一键配置 cnb↔GitHub 同步
 #
-# 使用说明:
-#   1. 复制此文件到仓库根目录的 .cnb/ 下
-#   2. 在 .cnb.yml 的 include 中引用 .cnb/workflows/sync.yml
-#   3. 在 secrets 仓库中配置 GITHUB_TOKEN 和 CNB_TOKEN 并通过 imports 引入
+# 用法:
+#   ./auto-setup-sync.sh <target_repo> [github_repo]
+#
+# 功能:
+#   1. 创建新分支
+#   2. 生成 .cnb/web_trigger.yml（3个同步按钮）
+#   3. 在 .cnb.yml 中追加 include 引用
+#   4. 提交并推送，创建 MR
+# ============================================================
+
+set -euo pipefail
+
+TARGET_REPO="${1:?用法: $0 <target_repo> [github_repo]}"
+GITHUB_REPO="${2:-}"
+
+export GITHUB_TOKEN="${GITHUB_TOKEN:?❌ 请设置 GITHUB_TOKEN}"
+export CNB_TOKEN="${CNB_TOKEN:?❌ 请设置 CNB_TOKEN}"
+export CNB_REPO_SLUG="${CNB_REPO_SLUG:?❌ 请设置 CNB_REPO_SLUG}"
+
+cd /workspace
+
+# 获取组织名和仓库名
+ORG="$(echo "$CNB_REPO_SLUG" | cut -d/ -f1)"
+MY_REPO="$(echo "$CNB_REPO_SLUG" | cut -d/ -f2)"
+
+# 生成唯一分支名
+TIMESTAMP="$(date +%Y%m%d%H%M%S)"
+SETUP_BRANCH="auto-setup-sync-${TARGET_REPO}-${TIMESTAMP}"
+
+echo "📝 创建分支: $SETUP_BRANCH"
+git checkout -b "$SETUP_BRANCH"
+
+# 1. 生成 .cnb/web_trigger.yml
+echo "📄 生成 .cnb/web_trigger.yml ..."
+mkdir -p .cnb
+cat > .cnb/web_trigger.yml << 'EOF'
+# .cnb/web_trigger.yml
+# 自动生成的同步按钮配置
+# 来源: ⚙️ 一键配置同步
 
 branch:
   - buttons:
-      # 按钮1: 推送 cnb → GitHub
-      # 触发事件: web_trigger_cnb_to_github
-      # 对应流水线: .cnb/workflows/sync.yml 中的 web_trigger_cnb_to_github
       - name: 🚀 同步到GitHub
         description: 将当前分支推送到 GitHub 仓库
         event: web_trigger_cnb_to_github
@@ -21,7 +53,6 @@ branch:
             required: true
             default: "current"
             name: 同步范围
-            description: 选择同步范围
             options:
               - name: 当前分支
                 value: "current"
@@ -31,22 +62,17 @@ branch:
             type: input
             required: false
             name: 分支名
-            description: 指定要推送的分支（当前分支模式下可留空）
           force:
             type: switch
             required: false
             default: "false"
             name: 强制覆盖
-            description: 是否使用 --force 推送（谨慎使用）
           github_repo:
             type: input
             required: false
             name: GitHub 仓库
             description: 目标 GitHub 仓库地址（如 owner/repo，留空则使用默认）
       
-      # 按钮2: 拉取 GitHub → cnb
-      # 触发事件: web_trigger_github_to_cnb
-      # 对应流水线: .cnb/workflows/sync.yml 中的 web_trigger_github_to_cnb
       - name: 📥 从GitHub拉取
         description: 从 GitHub 仓库拉取最新代码
         event: web_trigger_github_to_cnb
@@ -56,7 +82,6 @@ branch:
             required: true
             default: "current"
             name: 同步范围
-            description: 选择同步范围
             options:
               - name: 当前分支
                 value: "current"
@@ -66,16 +91,12 @@ branch:
             type: input
             required: false
             name: 分支名
-            description: 指定要拉取的分支（当前分支模式下可留空）
           github_repo:
             type: input
             required: false
             name: GitHub 仓库
-            description: 源 GitHub 仓库地址（如 owner/repo，留空则使用默认）
+            description: 源 GitHub 仓库地址
       
-      # 按钮3: 双向同步（先推送再拉取）
-      # 触发事件: web_trigger_full_sync
-      # 对应流水线: .cnb/workflows/sync.yml 中的 web_trigger_full_sync
       - name: 🔄 双向同步
         description: 先推送再拉取，保持两边一致
         event: web_trigger_full_sync
@@ -85,7 +106,6 @@ branch:
             required: true
             default: "current"
             name: 同步范围
-            description: 选择同步范围
             options:
               - name: 当前分支
                 value: "current"
@@ -95,44 +115,67 @@ branch:
             type: input
             required: false
             name: 分支名
-            description: 指定操作的分支（当前分支模式下可留空）
           force:
             type: switch
             required: false
             default: "false"
             name: 强制覆盖
-            description: 推送时是否使用 --force
           github_repo:
             type: input
             required: false
             name: GitHub 仓库
-            description: GitHub 仓库地址（如 owner/repo，留空则使用默认）
           dry_run:
             type: select
             required: false
             default: "false"
             name: 预览模式
-            description: true=预览不执行, false=直接执行
             options:
               - name: 直接执行
                 value: "false"
               - name: 预览模式
                 value: "true"
-      
-      # 按钮4: 一键配置同步（输入目标仓库名，创建分支+MR）
-      # 触发事件: web_trigger_auto_setup
-      # 对应流水线: .cnb/workflows/sync.yml 中的 web_trigger_auto_setup
-      - name: ⚙️ 一键配置同步
-        description: 输入同组织仓库名，创建分支写入配置并提交MR
-        event: web_trigger_auto_setup
-        inputs:
-          target_repo:
-            type: input
-            required: true
-            name: 目标仓库名
-            description: 同组织下的仓库名（如 sono），将自动写入 .cnb.yml 和 .cnb/web_trigger.yml
-          github_repo:
-            type: input
-            required: false
-            name: GitHub 仓库
-            description: 目标 GitHub 仓库（如 owner/repo，留空则使用默认）
+EOF
+
+# 2. 生成 .cnb.yml 的 include 部分
+echo "📄 更新 .cnb.yml ..."
+
+if [ ! -f .cnb.yml ]; then
+  # 没有 .cnb.yml，创建一个新的
+  cat > .cnb.yml << 'YML_EOF'
+# 流水线配置
+
+include:
+  - https://cnb.cool/sc.hwd/cnb-sync/-/blob/main/.cnb/workflows/sync.yml
+YML_EOF
+else
+  # 已有 .cnb.yml，检查是否已有 include
+  if ! grep -q "^include:" .cnb.yml; then
+    echo "" >> .cnb.yml
+    echo "include:" >> .cnb.yml
+    echo "  - https://cnb.cool/sc.hwd/cnb-sync/-/blob/main/.cnb/workflows/sync.yml" >> .cnb.yml
+  else
+    # include 已存在，追加
+    echo "  - https://cnb.cool/sc.hwd/cnb-sync/-/blob/main/.cnb/workflows/sync.yml" >> .cnb.yml
+  fi
+fi
+
+# 3. 提交
+COMMIT_MSG="feat: 一键配置 cnb↔GitHub 同步 (${TARGET_REPO})
+
+- 添加 .cnb/web_trigger.yml（3个同步按钮）
+- 添加 include 引用 cnb-sync 流水线
+- 目标 GitHub 仓库: ${GITHUB_REPO:-默认}"
+
+git add .cnb/web_trigger.yml .cnb.yml
+git commit -m "$COMMIT_MSG"
+
+# 4. 推送
+echo "📤 推送分支 ..."
+git push origin "$SETUP_BRANCH"
+
+# 5. 创建 MR
+echo "🔗 创建 MR ..."
+MR_RESPONSE=$(curl -s -X POST \
+  -H "Authorization: $CNB_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/...[truncated]

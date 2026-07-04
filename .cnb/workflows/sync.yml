@@ -3,21 +3,21 @@
 #
 # 使用说明:
 #   1. 通过 include 引用到你的 .cnb.yml 中
-#   2. 在 secrets 仓库中配置 GITHUB_TOKEN 并通过 allow_slugs 授权
+#   2. 在 secrets 仓库中配置 GITHUB_TOKEN 和 CNB_TOKEN 并通过 allow_slugs 授权
 #   3. 确保仓库中有 scripts/cnb-sync.sh
 #
 # 触发事件:
 #   web_trigger_cnb_to_github  — 推送 cnb → GitHub（由按钮 "🚀 同步到GitHub" 触发）
 #   web_trigger_github_to_cnb  — 拉取 GitHub → cnb（由按钮 "📥 从GitHub拉取" 触发）
 #   web_trigger_full_sync      — 双向同步（由按钮 "🔄 双向同步" 触发）
+#   web_trigger_auto_setup     — 一键配置同步（由按钮 "⚙️ 一键配置同步" 触发）
 #
 # 注意: imports 必须放在每个事件的 - 项下（与 stages 同级），
-#       否则 secrets 仓库的 GITHUB_TOKEN 不会被注入
+#       否则 secrets 仓库的变量不会被注入
 
 $:
   # ========== 按钮1: 推送 cnb → GitHub ==========
   web_trigger_cnb_to_github:
-    # 从 secrets 仓库导入 GITHUB_TOKEN
     - imports:
         - "https://cnb.cool/sc.hwd/secrets/-/blob/main/git/github.yml"
       stages:
@@ -62,7 +62,6 @@ $:
 
   # ========== 按钮2: 拉取 GitHub → cnb ==========
   web_trigger_github_to_cnb:
-    # 从 secrets 仓库导入 GITHUB_TOKEN
     - imports:
         - "https://cnb.cool/sc.hwd/secrets/-/blob/main/git/github.yml"
       stages:
@@ -99,7 +98,6 @@ $:
 
   # ========== 按钮3: 双向同步 ==========
   web_trigger_full_sync:
-    # 从 secrets 仓库导入 GITHUB_TOKEN
     - imports:
         - "https://cnb.cool/sc.hwd/secrets/-/blob/main/git/github.yml"
       stages:
@@ -137,3 +135,31 @@ $:
             bash scripts/cnb-sync.sh sync 2>&1 || { echo "❌ 同步失败"; exit 1; }
             
             echo "✅ 双向同步完成!"
+
+  # ========== 按钮4: 一键配置同步（创建分支+MR）==========
+  web_trigger_auto_setup:
+    - imports:
+        - "https://cnb.cool/sc.hwd/secrets/-/blob/main/git/github.yml"
+        - "https://cnb.cool/sc.hwd/secrets/-/blob/main/git/cnb.yml"
+      stages:
+        - name: 一键配置同步
+          script: |
+            set -euo pipefail
+            TARGET_REPO="${target_repo:?❌ 请输入目标仓库名}"
+            GITHUB_REPO="${github_repo:-}"
+            
+            echo "⚙️ 一键配置同步: ${CNB_REPO_SLUG} → ${TARGET_REPO}"
+            echo "   GitHub 仓库: ${GITHUB_REPO:-默认}"
+            
+            cd /workspace
+            export GITHUB_TOKEN="${GITHUB_TOKEN:?请配置 GITHUB_TOKEN}"
+            export CNB_TOKEN="${CNB_TOKEN:?请配置 CNB_TOKEN}"
+            export CNB_REPO_SLUG="${CNB_REPO_SLUG}"
+            
+            # 执行一键配置脚本
+            bash scripts/auto-setup-sync.sh "$TARGET_REPO" "$GITHUB_REPO" 2>&1 || {
+              echo "❌ 一键配置失败"
+              exit 1
+            }
+            
+            echo "✅ 一键配置完成！请检查 MR"
