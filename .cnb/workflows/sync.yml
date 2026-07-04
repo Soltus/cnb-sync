@@ -1,11 +1,5 @@
 # .cnb/workflows/sync.yml
 # 通用 cnb ↔ GitHub 同步流水线
-# 可复用于任意 cnb 仓库
-#
-# 包含的触发事件:
-#   web_trigger_cnb_to_github  — 推送 cnb → GitHub
-#   web_trigger_github_to_cnb  — 拉取 GitHub → cnb
-#   web_trigger_full_sync      — 双向同步
 
 $:
   web_trigger_cnb_to_github:
@@ -14,23 +8,38 @@ $:
           script: |
             set -euo pipefail
             BRANCH="${branch:-}"
+            MODE="${mode:-current}"
+            FORCE="${force:-false}"
+            GITHUB_REPO="${github_repo:-}"
             
             echo "📤 开始同步到 GitHub..."
             echo "   CNB_REPO_SLUG: ${CNB_REPO_SLUG}"
-            echo "   目标分支: ${BRANCH:-当前分支}"
+            echo "   模式: ${MODE}"
+            echo "   分支: ${BRANCH:-当前分支}"
+            echo "   强制覆盖: ${FORCE}"
+            echo "   GitHub 仓库: ${GITHUB_REPO:-默认}"
             
             cd /workspace
             export GITHUB_TOKEN="${GITHUB_TOKEN:?请配置 GITHUB_TOKEN}"
             export CNB_REPO_SLUG="${CNB_REPO_SLUG}"
             
-            if [ -n "$BRANCH" ]; then
-              git checkout "$BRANCH" 2>/dev/null || true
+            if [ -n "$GITHUB_REPO" ]; then
+              export GITHUB_USER="$(echo "$GITHUB_REPO" | cut -d/ -f1)"
             fi
             
-            bash scripts/cnb-sync.sh push 2>&1 || {
-              echo "❌ 同步失败"
-              exit 1
-            }
+            if [ "$MODE" = "all" ]; then
+              export SYNC_BRANCHES="$(git branch --format='%(refname:short)')"
+            elif [ -n "$BRANCH" ]; then
+              git checkout "$BRANCH" 2>/dev/null || true
+              export SYNC_BRANCHES="$BRANCH"
+            fi
+            
+            if [ "$FORCE" = "true" ]; then
+              export DRY_RUN="false"
+              bash scripts/cnb-sync.sh push --force 2>&1 || { echo "❌ 同步失败"; exit 1; }
+            else
+              bash scripts/cnb-sync.sh push 2>&1 || { echo "❌ 同步失败"; exit 1; }
+            fi
             
             echo "✅ 同步完成!"
 
@@ -40,23 +49,30 @@ $:
           script: |
             set -euo pipefail
             BRANCH="${branch:-}"
+            MODE="${mode:-current}"
+            GITHUB_REPO="${github_repo:-}"
             
             echo "📥 开始从 GitHub 拉取..."
             echo "   CNB_REPO_SLUG: ${CNB_REPO_SLUG}"
-            echo "   源分支: ${BRANCH:-当前分支}"
+            echo "   模式: ${MODE}"
+            echo "   分支: ${BRANCH:-当前分支}"
             
             cd /workspace
             export GITHUB_TOKEN="${GITHUB_TOKEN:?请配置 GITHUB_TOKEN}"
             export CNB_REPO_SLUG="${CNB_REPO_SLUG}"
             
-            if [ -n "$BRANCH" ]; then
-              git checkout "$BRANCH" 2>/dev/null || true
+            if [ -n "$GITHUB_REPO" ]; then
+              export GITHUB_USER="$(echo "$GITHUB_REPO" | cut -d/ -f1)"
             fi
             
-            bash scripts/cnb-sync.sh pull 2>&1 || {
-              echo "❌ 拉取失败"
-              exit 1
-            }
+            if [ "$MODE" = "all" ]; then
+              export SYNC_BRANCHES="$(git branch --format='%(refname:short)')"
+            elif [ -n "$BRANCH" ]; then
+              git checkout "$BRANCH" 2>/dev/null || true
+              export SYNC_BRANCHES="$BRANCH"
+            fi
+            
+            bash scripts/cnb-sync.sh pull 2>&1 || { echo "❌ 拉取失败"; exit 1; }
             
             echo "✅ 拉取完成!"
 
@@ -65,19 +81,34 @@ $:
         - name: 双向同步
           script: |
             set -euo pipefail
+            BRANCH="${branch:-}"
+            MODE="${mode:-current}"
+            FORCE="${force:-false}"
+            DRY_RUN="${dry_run:-false}"
+            GITHUB_REPO="${github_repo:-}"
             
             echo "🔄 开始双向同步..."
             echo "   CNB_REPO_SLUG: ${CNB_REPO_SLUG}"
-            echo "   预览模式: ${dry_run:-false}"
+            echo "   模式: ${MODE}"
+            echo "   分支: ${BRANCH:-当前分支}"
+            echo "   强制覆盖: ${FORCE}"
+            echo "   预览模式: ${DRY_RUN}"
             
-            export DRY_RUN="${dry_run:-false}"
+            export DRY_RUN="${DRY_RUN}"
             export GITHUB_TOKEN="${GITHUB_TOKEN:?请配置 GITHUB_TOKEN}"
             export CNB_REPO_SLUG="${CNB_REPO_SLUG}"
             
-            cd /workspace
-            bash scripts/cnb-sync.sh sync 2>&1 || {
-              echo "❌ 同步失败"
-              exit 1
-            }
+            if [ -n "$GITHUB_REPO" ]; then
+              export GITHUB_USER="$(echo "$GITHUB_REPO" | cut -d/ -f1)"
+            fi
+            
+            if [ "$MODE" = "all" ]; then
+              export SYNC_BRANCHES="$(git branch --format='%(refname:short)')"
+            elif [ -n "$BRANCH" ]; then
+              git checkout "$BRANCH" 2>/dev/null || true
+              export SYNC_BRANCHES="$BRANCH"
+            fi
+            
+            bash scripts/cnb-sync.sh sync 2>&1 || { echo "❌ 同步失败"; exit 1; }
             
             echo "✅ 双向同步完成!"
