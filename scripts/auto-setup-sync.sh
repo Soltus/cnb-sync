@@ -333,45 +333,38 @@ echo "🔗 在 ${TARGET_SLUG} 创建 MR ..."
 # 切换到目标仓库目录
 cd "$TARGET_DIR"
 
-# 尝试创建 MR - 使用正确的 CNB API 端点
+# 使用 CNB 正确的 API 端点: /{repo}/-/pulls
 echo "   尝试创建 MR..."
 
 set +e
 MR_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
-  -H "PRIVATE-TOKEN: $CNB_TOKEN" \
+  -H "Authorization: Bearer $CNB_TOKEN" \
   -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
   -d "{
-    \"source_branch\": \"${SETUP_BRANCH}\",
-    \"target_branch\": \"main\",
+    \"head\": \"${SETUP_BRANCH}\",
+    \"base\": \"main\",
     \"title\": \"feat: 一键配置同步\",
-    \"description\": \"一键配置 cnb↔GitHub 同步\\n\\n- 智能合并 .cnb/web_trigger.yml（保留已有按钮，追加同步按钮）\\n- 智能合并 .cnb.yml（追加 include 引用）\\n- 目标 GitHub 仓库: ${GITHUB_REPO:-默认}\"
-  }" "https://api.cnb.cool/api/v4/projects/${TARGET_SLUG//\//%2F}/merge_requests" 2>&1)
+    \"body\": \"一键配置 cnb↔GitHub 同步\\n\\n- 智能合并 .cnb/web_trigger.yml（保留已有按钮，追加同步按钮）\\n- 智能合并 .cnb.yml（追加 include 引用）\\n- 目标 GitHub 仓库: ${GITHUB_REPO:-默认}\"
+  }" "https://api.cnb.cool/${TARGET_SLUG}/-/pulls" 2>&1)
 MR_HTTP_CODE=$(echo "$MR_RESPONSE" | tail -1)
 MR_BODY=$(echo "$MR_RESPONSE" | sed '$d')
 set -e
 
 echo "   HTTP 状态码: $MR_HTTP_CODE"
+echo "   API 响应: $MR_BODY"
 
-# 检查响应是否为 JSON 且创建成功
 if [ "$MR_HTTP_CODE" = "201" ] || [ "$MR_HTTP_CODE" = "200" ]; then
-  if echo "$MR_BODY" | python3 -c "import sys,json; json.load(sys.stdin)" 2>/dev/null; then
-    MR_IID=$(echo "$MR_BODY" | python3 -c "import sys,json; print(json.load(sys.stdin)['iid'])" 2>/dev/null || echo "?")
-    echo "   API 响应: $MR_BODY"
-    echo ""
-    echo "✅ MR 创建成功!"
-    echo "   https://cnb.cool/${TARGET_SLUG}/-/merge-requests/${MR_IID}"
-    exit 0
-  fi
+  MR_IID=$(echo "$MR_BODY" | python3 -c "import sys,json; print(json.load(sys.stdin)['iid'])" 2>/dev/null || echo "?")
+  echo ""
+  echo "✅ MR 创建成功!"
+  echo "   https://cnb.cool/${TARGET_SLUG}/-/merge-requests/${MR_IID}"
+else
+  echo ""
+  echo "⚠️  MR API 创建失败 (HTTP $MR_HTTP_CODE)"
+  echo "   但分支 ${SETUP_BRANCH} 已成功推送到 ${TARGET_SLUG}"
+  echo ""
+  echo "✅ 请手动点击以下链接创建 MR:"
+  echo "   https://cnb.cool/${TARGET_SLUG}/-/compare/main...${SETUP_BRANCH}"
+  exit 0
 fi
-
-# API 失败,但分支已推送成功,提示用户手动创建
-echo ""
-echo "⚠️  MR API 创建失败 (HTTP $MR_HTTP_CODE)"
-echo "   但分支 ${SETUP_BRANCH} 已成功推送到 ${TARGET_SLUG}"
-echo ""
-echo "✅ 请手动点击以下链接创建 MR:"
-echo "   https://cnb.cool/${TARGET_SLUG}/-/compare/main...${SETUP_BRANCH}"
-echo ""
-echo "   标题: feat: 一键配置同步"
-echo "   目标分支: main"
-exit 0
