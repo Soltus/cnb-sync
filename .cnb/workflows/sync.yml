@@ -147,6 +147,11 @@ $:
         - name: 一键配置同步
           script: |
             set -euo pipefail
+
+            pip install pyyaml
+
+
+
             TARGET_REPO="${target_repo:?❌ 请输入目标仓库名}"
             GITHUB_REPO="${github_repo:-}"
             
