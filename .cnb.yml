@@ -5,6 +5,10 @@ include:
   - https://cnb.cool/sc.hwd/cnb-sync/-/blob/main/.cnb/workflows/sync.yml
 
 $:
+  imports:
+    - "https://cnb.cool/sc.hwd/secrets/-/blob/main/git/github.yml"
+
+$:
   web_trigger_cnb_to_github:
     - stages:
         - name: 同步到 GitHub
