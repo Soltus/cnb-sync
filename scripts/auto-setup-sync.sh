@@ -333,31 +333,36 @@ echo "🔗 在 ${TARGET_SLUG} 创建 MR ..."
 # 切换到目标仓库目录
 cd "$TARGET_DIR"
 
-# 使用 cnb CLI 创建 MR
+# 使用 GitLab-style API 创建 MR (cnb 基于 GitLab)
 set +e
-MR_RESPONSE=$(cnb pulls post-pull \
-  --repo "${TARGET_SLUG}" \
-  --title "feat: 一键配置同步" \
-  --body "一键配置 cnb↔GitHub 同步
-
-- 智能合并 .cnb/web_trigger.yml（保留已有按钮，追加同步按钮）
-- 智能合并 .cnb.yml（追加 include 引用）
-- 目标 GitHub 仓库: ${GITHUB_REPO:-默认}" \
-  --head "${SETUP_BRANCH}" \
-  --base "main" \
-  --verbose 2>&1)
-MR_EXIT_CODE=$?
+MR_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+  -H "PRIVATE-TOKEN: $CNB_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"source_branch\": \"${SETUP_BRANCH}\",
+    \"target_branch\": \"main\",
+    \"title\": \"feat: 一键配置同步\",
+    \"description\": \"一键配置 cnb↔GitHub 同步\\n\\n- 智能合并 .cnb/web_trigger.yml（保留已有按钮，追加同步按钮）\\n- 智能合并 .cnb.yml（追加 include 引用）\\n- 目标 GitHub 仓库: ${GITHUB_REPO:-默认}\"
+  }" "https://api.cnb.cool/api/v4/projects/${TARGET_SLUG//\//%2F}/merge_requests" 2>&1)
+MR_HTTP_CODE=$(echo "$MR_RESPONSE" | tail -1)
+MR_BODY=$(echo "$MR_RESPONSE" | sed '$d')
 set -e
 
-echo "   MR 退出码: $MR_EXIT_CODE"
-echo "   MR 响应: $MR_RESPONSE"
+echo "   HTTP 状态码: $MR_HTTP_CODE"
+echo "   API 响应: $MR_BODY"
 
-if [ $MR_EXIT_CODE -eq 0 ]; then
-  MR_IID=$(echo "$MR_RESPONSE" | python3 -c "import sys,json; data=json.load(sys.stdin); print(data.get('iid', data.get('number', '?')))" 2>/dev/null || echo "?")
+if [ "$MR_HTTP_CODE" = "201" ] || [ "$MR_HTTP_CODE" = "200" ]; then
+  MR_IID=$(echo "$MR_BODY" | python3 -c "import sys,json; print(json.load(sys.stdin)['iid'])" 2>/dev/null || echo "?")
   echo ""
   echo "✅ MR 创建成功!"
   echo "   https://cnb.cool/${TARGET_SLUG}/-/merge-requests/${MR_IID}"
+elif [ "$MR_HTTP_CODE" = "401" ]; then
+  echo "❌ 认证失败,请检查 CNB_TOKEN 是否有写入权限"
+  exit 1
+elif [ "$MR_HTTP_CODE" = "404" ]; then
+  echo "❌ API 端点不存在"
+  exit 1
 else
-  echo "❌ MR 创建失败 (退出码: $MR_EXIT_CODE)"
+  echo "❌ MR 创建失败 (HTTP $MR_HTTP_CODE)"
   exit 1
 fi
