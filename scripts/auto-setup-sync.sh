@@ -73,10 +73,16 @@ if [ "$HAS_OUR_BUTTONS" = false ]; then
     echo "  检测到已有按钮，将追加我们的同步按钮..."
     
     python3 << 'PYEOF'
-import yaml, sys
+from ruamel.yaml import YAML
+import sys
+
+yaml = YAML()
+yaml.allow_unicode = True
+yaml.default_flow_style = False
+yaml.sort_keys = False
 
 with open(".cnb/web_trigger.yml", "r") as f:
-    doc = yaml.safe_load(f)
+    doc = yaml.load(f)
 
 our_buttons = [
     {
@@ -172,7 +178,7 @@ for branch_cfg in doc.get("branch", []):
             existing_names.add(evt)
 
 with open(".cnb/web_trigger.yml", "w") as f:
-    yaml.dump(doc, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    yaml.dump(doc, f)
 
 print("  ✅ 已追加 3 个同步按钮到现有文件")
 PYEOF
@@ -180,8 +186,13 @@ PYEOF
     # 没有文件，创建全新文件
     echo "  创建新的 web_trigger.yml ..."
     
-    python << 'PYEOF'
-import yaml
+    python3 << 'PYEOF'
+from ruamel.yaml import YAML
+
+yaml = YAML()
+yaml.allow_unicode = True
+yaml.default_flow_style = False
+yaml.sort_keys = False
 
 doc = {
     "branch": [{
@@ -272,7 +283,7 @@ doc = {
 }
 
 with open(".cnb/web_trigger.yml", "w") as f:
-    yaml.dump(doc, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    yaml.dump(doc, f)
 
 print("  ✅ 已创建新的 web_trigger.yml")
 PYEOF
