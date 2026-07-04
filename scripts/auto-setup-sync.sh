@@ -282,7 +282,7 @@ else
 fi
 
 # ============================================================
-# 4. 处理 .cnb.yml — 智能合并 include 部分
+# 4. 处理 .cnb.yml — 智能合并 include 部分(保留注释)
 # ============================================================
 echo "📄 处理 .cnb.yml ..."
 
@@ -293,43 +293,40 @@ if [ ! -f .cnb.yml ]; then
   echo "  - ${CNB_SYNC_URL}" >> .cnb.yml
   echo "  ✅ 创建新的 .cnb.yml"
 else
-  # 使用 Python 做真正的 YAML 合并
+  # 使用 ruamel.yaml 保留注释和格式的智能合并
   python3 << PYEOF
-import yaml
+from ruamel.yaml import YAML
 import sys
 
 sync_url = "${CNB_SYNC_URL}"
+yaml = YAML()
+yaml.preserve_quotes = True
+yaml.width = 4096
 
-try:
-    with open(".cnb.yml", "r") as f:
-        doc = yaml.safe_load(f)
-except Exception as e:
-    print(f"  ⚠️  YAML 解析失败: {e}")
-    print("  将尝试追加到文件末尾...")
-    with open(".cnb.yml", "a") as f:
-        f.write(f"\ninclude:\n  - {sync_url}\n")
-    print("  ✅ 已追加 include")
-    sys.exit(0)
+with open(".cnb.yml", "r") as f:
+    doc = yaml.load(f)
 
 if doc is None:
     doc = {}
 
-# 确保 include 存在
+# 确保 include 键存在
 if "include" not in doc:
     doc["include"] = []
 
 # 检查是否已包含
-if sync_url not in doc["include"]:
-    doc["include"].append(sync_url)
-    print(f"  ✅ 已追加: {sync_url}")
-else:
+if sync_url in doc["include"]:
     print("  ℹ️  已包含该 URL，无需操作")
+    print("  ✅ .cnb.yml 无需修改")
+    sys.exit(0)
 
-# 写回文件
+# 追加到新 include 列表末尾
+doc["include"].append(sync_url)
+
+# 写回文件(保留所有注释和格式)
 with open(".cnb.yml", "w") as f:
-    yaml.dump(doc, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+    yaml.dump(doc, f)
 
-print("  ✅ 已更新 .cnb.yml")
+print(f"  ✅ 已追加: {sync_url}")
 PYEOF
 fi
 

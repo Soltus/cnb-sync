@@ -148,7 +148,7 @@ $:
           script: |
             set -euo pipefail
 
-            pip install pyyaml
+            pip install ruamel.yaml
 
 
 
