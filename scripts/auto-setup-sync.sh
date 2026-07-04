@@ -7,8 +7,8 @@
 #
 # 功能:
 #   1. 创建新分支
-#   2. 生成 .cnb/web_trigger.yml（3个同步按钮）
-#   3. 在 .cnb.yml 中追加 include 引用
+#   2. 生成/合并 .cnb/web_trigger.yml（3个同步按钮）
+#   3. 在 .cnb.yml 中追加 include 引用（合并已有内容）
 #   4. 提交并推送，创建 MR
 # ============================================================
 
@@ -34,12 +34,15 @@ SETUP_BRANCH="auto-setup-sync-${TARGET_REPO}-${TIMESTAMP}"
 echo "📝 创建分支: $SETUP_BRANCH"
 git checkout -b "$SETUP_BRANCH"
 
+# ============================================================
 # 1. 生成 .cnb/web_trigger.yml
-echo "📄 生成 .cnb/web_trigger.yml ..."
+#    如果已有文件，追加我们的按钮（以我们写入的为准）
+# ============================================================
+echo "📄 处理 .cnb/web_trigger.yml ..."
 mkdir -p .cnb
 
-cat > .cnb/web_trigger.yml << 'WTEOF'
-# .cnb/web_trigger.yml
+# 我们的按钮 YAML 片段（不含文件头注释）
+OUR_BUTTONS_YAML='# .cnb/web_trigger.yml
 # 自动生成的同步按钮配置
 # 来源: ⚙️ 一键配置同步
 
@@ -134,28 +137,66 @@ branch:
               - name: 直接执行
                 value: "false"
               - name: 预览模式
-                value: "true"
-WTEOF
+                value: "true"'
 
-# 2. 生成 .cnb.yml 的 include 部分
-echo "📄 更新 .cnb.yml ..."
-
-if [ ! -f .cnb.yml ]; then
-  cat > .cnb.yml << 'YMLEOF'
-include:
-  - https://cnb.cool/sc.hwd/cnb-sync/-/blob/main/.cnb/workflows/sync.yml
-YMLEOF
-else
-  if ! grep -q "^include:" .cnb.yml; then
-    echo "" >> .cnb.yml
-    echo "include:" >> .cnb.yml
-    echo "  - https://cnb.cool/sc.hwd/cnb-sync/-/blob/main/.cnb/workflows/sync.yml" >> .cnb.yml
-  else
-    echo "  - https://cnb.cool/sc.hwd/cnb-sync/-/blob/main/.cnb/workflows/sync.yml" >> .cnb.yml
+if [ -f .cnb/web_trigger.yml ]; then
+  # 已有文件：提取原有按钮（排除我们已添加的按钮名），然后追加新的
+  echo "  检测到已有 web_trigger.yml，执行合并..."
+  
+  # 判断是否已经包含我们的按钮（通过事件名检测）
+  if grep -q "web_trigger_cnb_to_github" .cnb/web_trigger.yml; then
+    echo "  ⚠️ 已包含我们的按钮，将被覆盖（以本次写入为准）"
   fi
+  
+  # 直接覆盖：以我们写入的为准（有 MR 不怕）
+  echo "$OUR_BUTTONS_YAML" > .cnb/web_trigger.yml
+  echo "  ✅ 已覆盖为最新配置"
+else
+  echo "$OUR_BUTTONS_YAML" > .cnb/web_trigger.yml
+  echo "  ✅ 已创建新文件"
 fi
 
+# ============================================================
+# 2. 处理 .cnb.yml — 合并 include 部分
+#    如果已有 include，在末尾追加我们的引用
+#    如果没有 include，新建 include 块
+# ============================================================
+echo "📄 处理 .cnb.yml ..."
+
+CNB_SYNC_INCLUDE="  - https://cnb.cool/sc.hwd/cnb-sync/-/blob/main/.cnb/workflows/sync.yml"
+
+if [ ! -f .cnb.yml ]; then
+  # 没有 .cnb.yml，创建全新的
+  echo "include:" > .cnb.yml
+  echo "$CNB_SYNC_INCLUDE" >> .cnb.yml
+  echo "  ✅ 创建新的 .cnb.yml"
+else
+  # 已有 .cnb.yml，检查是否已有 include 块
+  if grep -q "^include:" .cnb.yml; then
+    # include 已存在，检查是否已包含我们的引用
+    if grep -q "cnb-sync" .cnb.yml; then
+      echo "  ⚠️ 已包含 cnb-sync 引用，将被追加（幂等）"
+      # 避免重复追加：检查最后一行是否已是我们的引用
+      LAST_LINE="$(tail -1 .cnb.yml)"
+      if [ "$LAST_LINE" != "$CNB_SYNC_INCLUDE" ]; then
+        echo "$CNB_SYNC_INCLUDE" >> .cnb.yml
+      fi
+    else
+      # include 存在但还没有我们的引用，追加
+      echo "$CNB_SYNC_INCLUDE" >> .cnb.yml
+    fi
+  else
+    # 没有 include 块，在文件末尾添加
+    echo "" >> .cnb.yml
+    echo "include:" >> .cnb.yml
+    echo "$CNB_SYNC_INCLUDE" >> .cnb.yml
+  fi
+  echo "  ✅ 已更新 .cnb.yml"
+fi
+
+# ============================================================
 # 3. 提交
+# ============================================================
 COMMIT_MSG="feat: 一键配置 cnb↔GitHub 同步 (${TARGET_REPO})
 
 - 添加 .cnb/web_trigger.yml（3个同步按钮）
@@ -171,7 +212,6 @@ git push origin "$SETUP_BRANCH"
 
 # 5. 创建 MR
 echo "🔗 创建 MR ..."
-MR_URL="https://api.cnb.cool/${ORG}/${MY_REPO}/-/merge-requests"
 
 MR_RESPONSE=$(curl -s -X POST \
   -H "Authorization: $CNB_TOKEN" \
