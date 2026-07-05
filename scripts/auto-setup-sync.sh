@@ -3,22 +3,26 @@
 # auto-setup-sync.sh — 一键配置 cnb↔GitHub 同步
 #
 # 用法:
-#   ./auto-setup-sync.sh <target_repo> [github_repo]
+#   ./auto-setup-sync.sh <target_repo> [target_branch]
+#
+# 参数:
+#   target_repo      目标仓库 slug（如 org/repo）
+#   target_branch    目标分支名（可选，留空则动态获取默认分支）
 #
 # 功能:
-#   1. clone 目标仓库
-#   2. 在目标仓库创建分支
+#   1. clone 目标仓库（默认分支或指定分支）
+#   2. 在目标仓库创建临时工作分支
 #   3. 智能合并 .cnb/web_trigger.yml（追加按钮，保留已有）
 #   4. 智能合并 .cnb.yml（追加 include 引用）
 #   5. 复制 scripts/cnb-sync.sh 同步脚本
-#   6. 提交并推送目标仓库
+#   6. 提交并推送到目标仓库
 #   7. 在目标仓库创建 MR
 # ============================================================
 
 set -euo pipefail
 
-TARGET_REPO="${1:?用法: $0 <target_repo> [github_repo]}"
-GITHUB_REPO="${2:-}"
+TARGET_REPO="${1:?用法: $0 <target_repo> [target_branch]}"
+TARGET_BRANCH="${2:-}"
 
 export GITHUB_TOKEN="${GITHUB_TOKEN:?❌ 请设置 GITHUB_TOKEN}"
 export CNB_TOKEN="${CNB_TOKEN:?❌ 请设置 CNB_TOKEN}"
@@ -33,6 +37,33 @@ MY_REPO="$(echo "$CNB_REPO_SLUG" | cut -d/ -f2)"
 # 目标仓库完整 slug
 TARGET_SLUG="${ORG}/${TARGET_REPO}"
 
+# 解析目标分支：若未指定，则动态获取仓库默认分支
+if [ -z "$TARGET_BRANCH" ]; then
+  echo "🔍 未指定目标分支，正在动态获取仓库默认分支 ..."
+  set +e
+  DEFAULT_BRANCH_RESPONSE=$(curl -s \
+    -H "Authorization: Bearer $CNB_TOKEN" \
+    -H "Accept: application/json" \
+    "https://api.cnb.cool/repos/${TARGET_SLUG}" 2>&1)
+  HTTP_CODE=$?
+  set -e
+
+  if [ $HTTP_CODE -eq 0 ] && [ -n "$DEFAULT_BRANCH_RESPONSE" ]; then
+    TARGET_BRANCH=$(echo "$DEFAULT_BRANCH_RESPONSE" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('default_branch',''))" 2>/dev/null || true)
+    if [ -n "$TARGET_BRANCH" ]; then
+      echo "  ✅ 获取到默认分支: ${TARGET_BRANCH}"
+    else
+      echo "  ⚠️ 无法从 API 获取默认分支，回退到 main"
+      TARGET_BRANCH="main"
+    fi
+  else
+    echo "  ⚠️ API 请求失败，回退到 main"
+    TARGET_BRANCH="main"
+  fi
+else
+  echo "📌 使用指定的目标分支: ${TARGET_BRANCH}"
+fi
+
 # 生成唯一分支名
 TIMESTAMP="$(date +%Y%m%d%H%M%S)"
 SETUP_BRANCH="auto-setup-sync-${TIMESTAMP}"
@@ -40,17 +71,21 @@ SETUP_BRANCH="auto-setup-sync-${TIMESTAMP}"
 # 目标仓库本地路径
 TARGET_DIR="/tmp/cnb-sync-target-${TARGET_REPO}-${TIMESTAMP}"
 
+echo ""
 echo "📝 准备目标仓库: ${TARGET_SLUG}"
-echo "   分支: ${SETUP_BRANCH}"
+echo "   基础分支: ${TARGET_BRANCH}"
+echo "   工作分支: ${SETUP_BRANCH}"
+echo ""
 
-# 1. Clone 目标仓库
-echo "📥 Clone 目标仓库 ..."
+# 1. Clone 目标仓库（默认分支或指定分支）
+echo "📥 Clone 目标仓库 (${TARGET_BRANCH}) ..."
 rm -rf "$TARGET_DIR"
-git clone "https://cnb:${CNB_TOKEN}@cnb.cool/${TARGET_SLUG}.git" "$TARGET_DIR"
+git clone --branch "$TARGET_BRANCH" "https://cnb:${CNB_TOKEN}@cnb.cool/${TARGET_SLUG}.git" "$TARGET_DIR"
 cd "$TARGET_DIR"
+git checkout "$TARGET_BRANCH"
 
-# 2. 创建新分支
-echo "📝 创建分支: $SETUP_BRANCH"
+# 2. 创建新工作分支（从解析后的基础分支检出）
+echo "📝 创建工作分支: $SETUP_BRANCH（基于 ${TARGET_BRANCH}）"
 git checkout -b "$SETUP_BRANCH"
 
 # ============================================================
@@ -363,7 +398,7 @@ COMMIT_MSG="feat: 一键配置 cnb↔GitHub 同步
 - 智能合并 .cnb/web_trigger.yml（保留已有按钮，追加同步按钮）
 - 智能合并 .cnb.yml（追加 include 引用 cnb-sync 流水线）
 - 复制 scripts/cnb-sync.sh 同步脚本
-- 目标 GitHub 仓库: ${GITHUB_REPO:-默认}"
+- 目标分支: ${TARGET_BRANCH}"
 
 git add .cnb/web_trigger.yml .cnb.yml scripts/cnb-sync.sh
 git commit -m "$COMMIT_MSG"
@@ -389,9 +424,9 @@ MR_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
   -H "Accept: application/json" \
   -d "{
     \"head\": \"${SETUP_BRANCH}\",
-    \"base\": \"main\",
+    \"base\": \"${TARGET_BRANCH}\",
     \"title\": \"feat: 一键配置同步\",
-    \"body\": \"一键配置 cnb↔GitHub 同步\\n\\n- 智能合并 .cnb/web_trigger.yml（保留已有按钮，追加同步按钮）\\n- 智能合并 .cnb.yml（追加 include 引用）\\n- 目标 GitHub 仓库: ${GITHUB_REPO:-默认}\"
+    \"body\": \"一键配置 cnb↔GitHub 同步\\n\\n- 智能合并 .cnb/web_trigger.yml（保留已有按钮，追加同步按钮）\\n- 智能合并 .cnb.yml（追加 include 引用）\\n- 目标分支: ${TARGET_BRANCH}\"
   }" "https://api.cnb.cool/${TARGET_SLUG}/-/pulls" 2>&1)
 MR_HTTP_CODE=$(echo "$MR_RESPONSE" | tail -1)
 MR_BODY=$(echo "$MR_RESPONSE" | sed '$d')
@@ -408,9 +443,9 @@ if [ "$MR_HTTP_CODE" = "201" ] || [ "$MR_HTTP_CODE" = "200" ]; then
 else
   echo ""
   echo "⚠️  MR API 创建失败 (HTTP $MR_HTTP_CODE)"
-  echo "   但分支 ${SETUP_BRANCH} 已成功推送到 ${TARGET_SLUG}"
+  echo "   但分支 ${SETUP_BRANCH} 已成功推送到 ${TARGET_SLUG}（基于 ${TARGET_BRANCH}）"
   echo ""
   echo "✅ 请手动点击以下链接创建 MR:"
-  echo "   https://cnb.cool/${TARGET_SLUG}/-/compare/main...${SETUP_BRANCH}"
+  echo "   https://cnb.cool/${TARGET_SLUG}/-/compare/${TARGET_BRANCH}...${SETUP_BRANCH}"
   exit 0
 fi

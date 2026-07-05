@@ -153,10 +153,10 @@ $:
 
 
             TARGET_REPO="${target_repo:?❌ 请输入目标仓库名}"
-            GITHUB_REPO="${github_repo:-}"
+            TARGET_BRANCH="${target_branch:-}"
             
             echo "⚙️ 一键配置同步: ${CNB_REPO_SLUG} → ${TARGET_REPO}"
-            echo "   GitHub 仓库: ${GITHUB_REPO:-默认}"
+            echo "   目标分支: ${TARGET_BRANCH:-默认}"
             
             cd /workspace
             export GITHUB_TOKEN="${GITHUB_TOKEN:?请配置 GITHUB_TOKEN}"
@@ -164,7 +164,7 @@ $:
             export CNB_REPO_SLUG="${CNB_REPO_SLUG}"
             
             # 执行一键配置脚本
-            bash scripts/auto-setup-sync.sh "$TARGET_REPO" "$GITHUB_REPO" 2>&1 || {
+            bash scripts/auto-setup-sync.sh "$TARGET_REPO" "$TARGET_BRANCH" 2>&1 || {
               echo "❌ 一键配置失败"
               exit 1
             }

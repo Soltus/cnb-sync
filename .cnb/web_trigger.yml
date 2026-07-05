@@ -131,8 +131,8 @@ branch:
             required: true
             name: 目标仓库名
             description: 同组织下的仓库名（如 sono），将自动写入 .cnb.yml 和 .cnb/web_trigger.yml
-          github_repo:
+          target_branch:
             type: input
             required: false
-            name: GitHub 仓库
-            description: 目标 GitHub 仓库（如 owner/repo，留空则使用默认）
+            name: 目标分支
+            description: 指定目标仓库的分支名（留空则使用默认分支）
